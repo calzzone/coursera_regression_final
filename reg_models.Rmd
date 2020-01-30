@@ -1,0 +1,260 @@
+---
+title: "Regression analysis of fuel efficiency using R dataset mtcars"
+author: "Alex Istrate"
+subtile: 'Coursera: Regression Models Course Project'
+output:
+  pdf_document: 
+    toc: yes
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: no
+---
+
+```{r setup, echo = F,	message = F, warning = F}
+knitr::opts_chunk$set(echo = FALSE,	message = FALSE,warning = FALSE)
+```
+
+# Summary
+
+The purpose of this analysis is to find if fuel efficiency (miles / gallorn) is affected by transmission type (automatic vs. manual) and, if yes, by how much. The R dataset, 'mtcars' contains data from 32 cars (each row has 10 columns).
+
+I found that a manual transmission significantly increased fuel efficiency by approximatibely 7.24 miles / gallon compared to automatic. However, adjusting for the ohter covariates resulted in significant fuel usage differences with a particular selection of covariates. Adjusted R-squared values increased from 34% for the unadjusted model to 80-84% for the adjusted models. 
+
+These results suggest that fuel efficiency is better in cars with manual transmission than in cars with automatic transmission, but other factors are able to compensate for this difference.
+
+# Data preparation
+
+Starting from the 'mtcars' dataset, I prepared two custom datasets for analysis. `mtcars2` kept the numerical type of discrete variables with numerical levels: `cyl` (Number of cylinders: 4, 6 or 8), `gear` (Number of forward gears: 3, 4 or 5) and `carb` (Number of carburetors: 1-4, 6 or 8). Therefore, regression coefficients for these variables show the expected difference of fuel efficiency for evey unit increase in their numeric value and the intercept uses values of 0, even when these values do not appear in the dataset. `mtcars3` coded these variables as factors resulting in dummy variables compared by the regression algorithm to their first level. 
+
+In both datasets, variables `am` (Transmission: manual compared to automatic) and `vs` (Engine: straight compared to V-shaped) were coded as factors. 
+
+Variables `disp` (Displacement) was rescaled from cubic inches to litters and `hp` (Gross horsepower) was downscaled by a factor of 100 in order to make their coefficients easier to visualize graphically since their unscaled coefficients and confidence intervals were very close to 0, which made them appear as dots rather than ranges. Rescaling only affects the numerical values of their coefficients and their visual aspect but does not affect any related statisitcal inference.
+
+```{r}
+library(tidyverse)
+
+data(mtcars)
+# mtcars %>% summary()
+
+# Prepare nice variable labels
+# All variables were labelled for aestethic reasons using the function `set_variable_labels` from the package `labelled`. This automatically applies the attribute `label` to each column of a dataset, which is used by other functions to replace variable names to variable labels in their output.
+
+labels <- c(
+  "Miles/(US) gallon",
+  "Number of cylinders",
+  "Displacement (Liters)", # from cubic inches
+  "Gross horsepower (100x)", # each 100 hp
+  "Rear axle ratio",
+  "Weight (1000 lbs)",
+  "1/4 mile time",
+  "Engine",
+  "Transmission",
+  "Number of forward gears",
+  "Number of carburetors"
+)
+
+# change the units for continuous variables to make coefficinets more visble on the chart
+mtcars1 <- mtcars %>% mutate(
+  `disp` = `disp`/61.024, # cubic inches to liters
+  `hp`= `hp`/100 #  each 100 hp
+)
+
+# make factors
+mtcars2 <- mtcars1 %>% mutate(
+  # true factors
+  `am` = factor(`am`, labels = c(`0`="automatic", `1`="manual")),
+  `vs` = factor(`vs`, labels = c(`0`="V-shaped", `1` = "straight")), 
+) %>% labelled::set_variable_labels(.labels = labels)
+
+mtcars3 <- mtcars2 %>% mutate(
+  # numeric factors: these could be coded as numeric
+  `cyl` = factor(`cyl`), # Levels: 4 6 8
+  `gear` = factor(`gear`), # Levels: 3 4 5
+  `carb` = factor(`carb`) # Levels: 1 2 3 4 6 8
+) %>% labelled::set_variable_labels(.labels = labels)
+
+# mtcars3 %>% summary()
+```
+
+# Exploratory analysis
+
+```{r}
+mtcars3 %>% summary()
+```
+
+## MPG by Transmission
+
+A boxplot of fuel efficiency by type of transmission shows that manual cars use less fuel than automatic cars. This difference is statisticaly signifficant accoding to a T-test.
+
+```{r fig.height=2.5, fig.width=2.5}
+ggplot(mtcars3, aes(y=`mpg`, x=`am`, color=`am`)) +
+  geom_boxplot(varwidth = T) +
+  stat_summary(fun.y = mean, na.rm=T, geom="point", pch=23, size=3) +
+  ggpubr::stat_compare_means(method = "t.test") +
+  labs(x="Transmission type", y="Miles / gallon") +
+  theme(legend.position = "none")
+```
+
+# Regression analysis
+
+## Models
+
+I defined 3 regression model to study the relation between the type of transmission (binary variable `am`) and fuel consumption (in miles / gallon, variable `mpg`). 
+
+The unadjusted model is just another way to perform the same T-test as above. It is used as refference point for the other models.
+
+I created 2 other models using all other variables as covariates. One of them uses numerical coding for numerical dicrete variables and the other codes them as factors. In order to reduce the number of coeficients, I used a stepwise selection algorithm to select the most important covariates from both adjusted models.
+
+```{r}
+# Unadjusted model: Miles / gallon by Transmission type
+unadj <- lm(data=mtcars2, formula=`mpg`~`am`) # %>% summary
+
+# Adjusted model: Miles / gallon by Transmission type, keepig all other covariates constant, retaing the numeric type of numeric factors
+adj.num <- lm(data=mtcars2, formula=`mpg`~.) # %>% summary
+
+# Adjusted model: Miles / gallon by Transmission type, keepig all other covariates constant, converting numeric factors to dummy variables
+adj.cat <- lm(data=mtcars3, formula=`mpg`~.) # %>% summary
+
+# Adjusted model with stepwise selection of covariates: Miles / gallon by Transmission type, keepig all other covariates constant, retaing the numeric type of numeric factors
+adj.num.step <- step(lm(data=mtcars2, formula=`mpg`~.), trace = F) # %>% summary
+
+# Adjusted model with stepwise selection of covariates: Miles / gallon by Transmission type, keepig all other covariates constant, converting numeric factors to dummy variables
+adj.cat.step <- step(lm(data=mtcars3, formula=`mpg`~.), trace = F) # %>% summary
+``` 
+
+I used the `sjPlot::plot_models` function to create a chart of the coefficients for the two adjusted models and the unadjusted model. This chart shows each coeficient and its 95% confidence interval. There are 3 models, each with a different color (green: unadjusted; blue: adjusted, numeric coding; red: adjusted, qualitative coding).
+
+Using numeric coding, I found that a manual transmission significantly increases fuel economy with only aproximativey 3 miles / gallon compared to automatic, when adjusted for car weight and 1/4 mile time. Also, each 1000lbs car weight reduces reduces fuel economy with approximatively 4 miles / gallon and a slower acceleration (each second added to the 1/4 mile time) increases fuel economy by about 1.2 miles / gallon.
+
+Using factor coding, I found that a manual transmission did significantly increase fuel economy, adjusted for weight, horsepower and number of cylinders. However, larger weight reduced fuel economy by about 2.5 miles / gallon for every 1000 lbs, a more powerful motor reduced fuel economy by about 3.2 miles / gallon for every 100 hp and a 6 cylinder motor reduced fuel economy by about 3 miles / gallon compared to 4 cylinders.
+
+```{r fig.height=2.5, fig.width=6}
+sjPlot::plot_models(unadj, adj.num.step, adj.cat.step, 
+                    std.est =  NULL, # use "std" if you want to show standardized coefficients, which makes it easier to comparte variables measured on different scales (with very different numeric values).
+                    show.intercept = F, # use TRUE to include the intercept
+                    prefix.labels = "label", wrap.labels = 100,
+                    title = "Miles/gallon by:",
+                    axis.title = "Coefficients (95% conf. int.)",
+                    legend.title = "Model", 
+                    m.labels = c("Unadjusted", 
+                                 "Adjusted, numeric, stepwise", "Adjusted, qualitative, stepwise")) +
+  
+  # legend: top-right, transparent background
+  theme(legend.position = c(1, 1), legend.justification = c(1, 1), 
+        legend.background = element_blank(), legend.key = element_blank()) 
+
+```
+
+```{r Coef_table, include=F}
+# This only works in the html version of the document.
+# A simpler but less pleasing alternative is to use the summary() and conf.int() functions or the stargazer::stargazer function.
+
+# The table below shows that the unadjusted model only explains 33.8% of the variance of fuel usage while that the adjsted stepwise models capture 83.4% and 84.0% of the variance in fuel usage, respectively.
+
+sjPlot::tab_model(unadj, adj.num.step, adj.cat.step, 
+                  collapse.ci = T,
+                  dv.labels = c("Unadjusted", 
+                                 "Adjusted, numeric, stepwise", "Adjusted, qualitative, stepwise")) 
+
+``` 
+
+# Appendix: Model diagnostics
+
+```{r Model_comparrisons, include=F}
+# The inclusion of other covariates significantly impoved the regression model, under both coding procedures (numeric: p<0.001, qualitative: p=0.0018). The two adjusted model did not significantly differ in their fit (p=0.7536).
+
+# Compare the unadjusted model to the adjusted models
+anova(unadj, adj.num)
+anova(unadj, adj.cat)
+
+# Compare the adjusted qualitative model to the numeric model
+anova(adj.num, adj.cat)
+
+
+# With stepwise selection, the inclusion of other covariates significantly impoved the regression model, under both coding procedures (numeric: p<0.001, qualitative: p<0.001). The two adjusted stepwise models did not significantly differ in their fit (p=0.227).
+
+# Compare the unadjusted model to the adjusted stepwise models
+anova(unadj, adj.num.step)
+anova(unadj, adj.cat.step)
+
+# Compare the adjusted stepwise qualitative and numeric models
+anova(adj.num.step, adj.cat.step)
+
+
+# The stepwise models did not show signifficantly better fits compared to their models of origin (numeric: p=0.864, qualitative: p=0.959).
+
+# Compare the stepwise models to the full models
+anova(adj.num, adj.num.step)
+anova(adj.cat, adj.cat.step)
+``` 
+
+```{r diag_plot}
+# A function that replicates the `plot(model)` functionality of base plotting system to ggplot
+
+diagPlot <- function(model) {
+  # Residuals vs. Fitted
+  p1 <- ggplot(model, aes(x = .fitted, y = .resid)) + 
+    geom_point() + stat_smooth() +
+    # geom_hline(yintercept=mean(model$residuals), color="black", linetype="solid") +
+    # geom_smooth(method="lm", se=F, color="black", linetype="solid", size=0.5)+
+    geom_hline(yintercept=0, color="red", linetype="dashed") +
+    labs(x="Fitted Values", y="Residuals", title="Residuals vs. Fitted")
+  
+  # Normal Q-Q
+  p2 <- ggplot(model, aes(sample=.stdresid)) +
+    geom_qq() + geom_qq_line(color="red", linetype="dashed") +
+    labs(x="Theoretical Quantiles", y="Std. Residuals", title="Normal Q-Q")
+  
+  # Scale-Location
+  p3 <- ggplot(model, aes(x = .fitted, y = sqrt(abs(.stdresid))))+
+    geom_point(na.rm=T) + stat_smooth(na.rm = T) +
+    labs(x="Fitted Value", y=expression(sqrt("|Std. Residuals|")), title="Scale-Location")
+  
+  # Residuals vs. Leverage vs. Cook's distance
+  p4 <- ggplot(model, aes(x = .hat, y = .stdresid)) + 
+    geom_point(aes(size=.cooksd, color=.cooksd), na.rm=T) + 
+    stat_smooth(na.rm=T) + 
+    geom_hline(yintercept=0, color="red", linetype="dashed") +
+    scale_size_area() + 
+    guides(size=guide_legend("Cook's Distance"), color=guide_legend("Cook's Distance"))+
+    labs(x="Leverage", y="Std. Residuals", title="Residuals vs. Leverage") + 
+    theme(legend.position="bottom")
+  
+  return(list(`Residuals vs. Fitted` = p1, 
+              `Normal Q-Q` = p2, 
+              `Scale-Location` = p3, 
+              `Residuals vs. Leverage vs. Cook's distance` = p4))
+}
+
+```
+
+## Unadjusted model
+
+The full diagnostics chart-grid is less usefull for the unadjusted model. The chart below shows the density distribution of the residuals, which are approximatively normal and centerd at 0.
+
+```{r fig.height=2.5, fig.width=2.5}
+ggplot(unadj, aes(x=.resid)) + 
+  geom_density(fill="grey80", color="grey50") +
+  ggpubr::stat_overlay_normal_density(color="black")+
+  geom_vline(xintercept = 0, color="red", linetype="dashed") +
+  labs(x="Residuals", y = "Density", 
+       title="Residuals distribution", subtitle = "(Normal distribution overlay)")
+``` 
+
+## Adjusted, numeric
+
+The adjusted model, using numeric coding, does not show many allarming issues. The residuals are normally distributed and scattered around 0 but show a "U"-shaped trend as more cars are added. They show no pattern with regards to fitted values. As expected, larger residuals show the highest leverage.
+
+```{r fig.height=5, fig.width=6}
+cowplot::plot_grid(plotlist = diagPlot(adj.num.step), nrow=2)
+``` 
+
+## Adjusted, qualitative
+
+The adjusted model, using factor coding, does not show many allarming issues. The residuals are less normally distributed, scattered around 0 and do not show any particular pattern as more cars are added. There may be some heteroskedacity. As expected, larger residuals show the highest leverage.
+
+```{r fig.height=5, fig.width=6}
+cowplot::plot_grid(plotlist = diagPlot(adj.cat.step), nrow=2)
+``` 
