@@ -16,6 +16,8 @@ output:
 knitr::opts_chunk$set(echo = FALSE,	message = FALSE,warning = FALSE)
 ```
 
+The Rmd file for this document is available online at https://github.com/calzzone/coursera_regression_final
+
 # Summary
 
 The purpose of this analysis is to find if fuel efficiency (miles / gallorn) is affected by transmission type (automatic vs. manual) and, if yes, by how much. The R dataset, 'mtcars' contains data from 32 cars (each row has 10 columns).
